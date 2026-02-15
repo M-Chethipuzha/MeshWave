@@ -23,9 +23,9 @@ void util_log(LogLevel level, const char *fmt, ...)
     gettimeofday(&tv, NULL);
     struct tm *tm = localtime(&tv.tv_sec);
 
-    fprintf(stderr, "[%02d:%02d:%02d.%03ld] [%s] ",
+    fprintf(stderr, "[%02d:%02d:%02d.%03d] [%s] ",
             tm->tm_hour, tm->tm_min, tm->tm_sec,
-            tv.tv_usec / 1000, tag);
+            (int)(tv.tv_usec / 1000), tag);
 
     va_list ap;
     va_start(ap, fmt);
