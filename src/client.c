@@ -1,9 +1,10 @@
 /* client.c
- * TCP client: connect to chosen server, send chat, receive events.
+ * TCP client: connect to chosen server, send chat and files, receive events.
  * Incoming packets are pushed to a ring buffer that the HTTP layer drains.
  */
 
 #include "client.h"
+#include "transfer.h"
 #include "util.h"
 
 #include <stdio.h>
@@ -73,10 +74,13 @@ static void *recv_loop(void *arg)
             break;
         }
 
-        char payload[MAX_MSG];
-        if (hdr.payload_len > 0 && hdr.payload_len <= MAX_MSG) {
+        char payload[CHUNK_SIZE + 256];
+        int max_payload = (int)sizeof(payload);
+        if (hdr.payload_len > 0 && hdr.payload_len <= max_payload) {
             n = recv(sock_fd, payload, hdr.payload_len, MSG_WAITALL);
             if (n <= 0) { connected = 0; break; }
+        } else if (hdr.payload_len > 0) {
+            continue;
         } else {
             continue;
         }
@@ -87,6 +91,7 @@ static void *recv_loop(void *arg)
 
             ChatEvent ev;
             memset(&ev, 0, sizeof(ev));
+            ev.type = EVT_CHAT;
             snprintf(ev.from, MAX_NAME, "%s", payload);
             int msg_len = hdr.payload_len - (int)(sep - payload) - 1;
             if (msg_len > 0 && msg_len < MAX_MSG)
@@ -95,6 +100,74 @@ static void *recv_loop(void *arg)
 
             event_push(&ev);
             util_log(LOG_INFO, "client: chat from \"%s\": %s", ev.from, ev.text);
+        }
+        else if (hdr.type == MSG_FILE_META) {
+            /* payload: "recipient\0filename\0total_chunks(4B)file_size(8B)" */
+            const char *recipient = payload;
+            const char *sep1 = memchr(payload, '\0', hdr.payload_len);
+            if (!sep1) continue;
+
+            const char *filename = sep1 + 1;
+            const char *sep2 = memchr(filename, '\0', hdr.payload_len - (int)(filename - payload));
+            if (!sep2) continue;
+
+            const char *bin = sep2 + 1;
+            uint32_t total_chunks = ntohl(*(uint32_t *)bin);
+            bin += 4;
+
+            uint64_t file_size = 0;
+            for (int i = 0; i < 8; i++)
+                file_size = (file_size << 8) | (uint8_t)bin[i];
+
+            int xfer_id = transfer_next_id();
+            transfer_recv_meta(xfer_id, "sender", filename, total_chunks, file_size, "./downloads");
+
+            /* Send ACK for meta */
+            PktHeader ack;
+            ack.type = MSG_FILE_ACK;
+            ack.seq  = 0;
+            ack.payload_len = 0;
+            send_all(sock_fd, &ack, sizeof(ack));
+
+            util_log(LOG_INFO, "client: incoming file \"%s\" (%u chunks)", filename, total_chunks);
+        }
+        else if (hdr.type == MSG_FILE_CHUNK) {
+            /* payload: xfer_id(4B) + chunk_data */
+            if (hdr.payload_len < 4) continue;
+
+            uint32_t xfer_id = ntohl(*(uint32_t *)payload);
+            const uint8_t *chunk_data = (const uint8_t *)(payload + 4);
+            int chunk_len = hdr.payload_len - 4;
+
+            int rc = transfer_recv_chunk((int)xfer_id, hdr.seq, chunk_data, chunk_len);
+
+            PktHeader ack;
+            ack.type = (rc == 0) ? MSG_FILE_ACK : MSG_FILE_NACK;
+            ack.seq  = hdr.seq;
+            ack.payload_len = 0;
+            send_all(sock_fd, &ack, sizeof(ack));
+
+            Transfer *t = transfer_find((int)xfer_id);
+            if (t) {
+                ChatEvent ev;
+                memset(&ev, 0, sizeof(ev));
+                ev.xfer_id = t->id;
+                ev.done_chunks = t->done_chunks;
+                ev.total_chunks = t->total_chunks;
+                ev.xfer_state = t->state;
+                snprintf(ev.filename, 256, "%s", t->filename);
+                snprintf(ev.from, MAX_NAME, "%s", t->peer);
+                ev.timestamp = util_time_ms();
+
+                if (t->state == XFER_DONE) {
+                    ev.type = EVT_FILE_COMPLETE;
+                } else if (t->state == XFER_ERROR) {
+                    ev.type = EVT_FILE_ERROR;
+                } else {
+                    ev.type = EVT_FILE_PROGRESS;
+                }
+                event_push(&ev);
+            }
         }
     }
 
@@ -188,6 +261,22 @@ int client_send_chat(const char *to, const char *text)
     return 0;
 }
 
+int client_send_file(const char *filepath, const char *to)
+{
+    if (!connected) return -1;
+    return transfer_send_file(sock_fd, filepath, to);
+}
+
+int client_pause_transfer(int xfer_id)
+{
+    return transfer_pause(xfer_id);
+}
+
+int client_resume_transfer(int xfer_id)
+{
+    return transfer_resume(xfer_id);
+}
+
 int client_is_connected(void)
 {
     return connected;
@@ -196,4 +285,9 @@ int client_is_connected(void)
 const char *client_get_username(void)
 {
     return username;
+}
+
+int client_get_sock_fd(void)
+{
+    return sock_fd;
 }
