@@ -103,7 +103,6 @@ static void *recv_loop(void *arg)
         }
         else if (hdr.type == MSG_FILE_META) {
             /* payload: "recipient\0filename\0total_chunks(4B)file_size(8B)" */
-            const char *recipient = payload;
             const char *sep1 = memchr(payload, '\0', hdr.payload_len);
             if (!sep1) continue;
 
