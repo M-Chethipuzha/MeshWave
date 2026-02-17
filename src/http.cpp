@@ -11,6 +11,7 @@ extern "C" {
 #include "discovery.h"
 #include "server.h"
 #include "client.h"
+#include "transfer.h"
 #include "util.h"
 }
 
@@ -302,6 +303,82 @@ static void handle_request(int fd, HttpReq *req)
         return; /* fd stays open, managed by SSE system */
     }
 
+    /* POST /api/file/send — initiate file transfer {path, to} */
+    if (strcmp(req->method, "POST") == 0 && strcmp(req->path, "/api/file/send") == 0) {
+        std::string path = json_field(req->body, "path");
+        std::string to   = json_field(req->body, "to");
+
+        if (path.empty() || to.empty()) {
+            send_json(fd, 400, "{\"error\":\"path and to required\"}");
+            close(fd);
+            return;
+        }
+
+        int xfer_id = client_send_file(path.c_str(), to.c_str());
+        if (xfer_id >= 0) {
+            send_json(fd, 200, "{\"ok\":true,\"id\":" + std::to_string(xfer_id) + "}");
+        } else {
+            send_json(fd, 400, "{\"error\":\"send failed\"}");
+        }
+        close(fd);
+        return;
+    }
+
+    /* POST /api/file/pause — pause transfer {id} */
+    if (strcmp(req->method, "POST") == 0 && strcmp(req->path, "/api/file/pause") == 0) {
+        std::string id_str = json_field(req->body, "id");
+        if (id_str.empty()) {
+            send_json(fd, 400, "{\"error\":\"id required\"}");
+            close(fd);
+            return;
+        }
+        int rc = client_pause_transfer(atoi(id_str.c_str()));
+        send_json(fd, rc == 0 ? 200 : 400,
+                  rc == 0 ? "{\"ok\":true}" : "{\"error\":\"pause failed\"}");
+        close(fd);
+        return;
+    }
+
+    /* POST /api/file/resume — resume transfer {id} */
+    if (strcmp(req->method, "POST") == 0 && strcmp(req->path, "/api/file/resume") == 0) {
+        std::string id_str = json_field(req->body, "id");
+        if (id_str.empty()) {
+            send_json(fd, 400, "{\"error\":\"id required\"}");
+            close(fd);
+            return;
+        }
+        int rc = client_resume_transfer(atoi(id_str.c_str()));
+        send_json(fd, rc == 0 ? 200 : 400,
+                  rc == 0 ? "{\"ok\":true}" : "{\"error\":\"resume failed\"}");
+        close(fd);
+        return;
+    }
+
+    /* GET /api/transfers — status of all transfers */
+    if (strcmp(req->method, "GET") == 0 && strcmp(req->path, "/api/transfers") == 0) {
+        Transfer ts[MAX_TRANSFERS];
+        int n = transfer_get_all(ts, MAX_TRANSFERS);
+
+        const char *state_names[] = { "idle", "active", "paused", "done", "error" };
+        std::string json = "[";
+        for (int i = 0; i < n; i++) {
+            if (i) json += ",";
+            int pct = ts[i].total_chunks > 0
+                ? (int)(ts[i].done_chunks * 100 / ts[i].total_chunks) : 0;
+            json += "{\"id\":" + std::to_string(ts[i].id)
+                 + ",\"filename\":\"" + json_escape(ts[i].filename) + "\""
+                 + ",\"peer\":\"" + json_escape(ts[i].peer) + "\""
+                 + ",\"state\":\"" + state_names[ts[i].state] + "\""
+                 + ",\"done\":" + std::to_string(ts[i].done_chunks)
+                 + ",\"total\":" + std::to_string(ts[i].total_chunks)
+                 + ",\"percent\":" + std::to_string(pct) + "}";
+        }
+        json += "]";
+        send_json(fd, 200, json);
+        close(fd);
+        return;
+    }
+
     /* OPTIONS for CORS preflight */
     if (strcmp(req->method, "OPTIONS") == 0) {
         const char *hdr =
@@ -330,11 +407,30 @@ static void *event_pump(void *arg)
     while (pump_running) {
         ChatEvent ev;
         while (client_poll_event(&ev)) {
-            char json[MAX_MSG + 256];
-            snprintf(json, sizeof(json),
-                     "{\"from\":\"%s\",\"text\":\"%s\",\"ts\":%ld}",
-                     ev.from, ev.text, ev.timestamp);
-            sse_broadcast("chat", json);
+            if (ev.type == EVT_CHAT) {
+                char json[MAX_MSG + 256];
+                snprintf(json, sizeof(json),
+                         "{\"from\":\"%s\",\"text\":\"%s\",\"ts\":%ld}",
+                         ev.from, ev.text, ev.timestamp);
+                sse_broadcast("chat", json);
+            } else {
+                const char *state_name = "active";
+                const char *event_name = "file_progress";
+                if (ev.xfer_state == XFER_DONE)   { state_name = "done";  event_name = "file_complete"; }
+                if (ev.xfer_state == XFER_ERROR)  { state_name = "error"; event_name = "file_error"; }
+                if (ev.xfer_state == XFER_PAUSED) { state_name = "paused"; }
+
+                int pct = ev.total_chunks > 0
+                    ? (int)(ev.done_chunks * 100 / ev.total_chunks) : 0;
+
+                char json[1024];
+                snprintf(json, sizeof(json),
+                         "{\"id\":%d,\"filename\":\"%s\",\"peer\":\"%s\","
+                         "\"state\":\"%s\",\"done\":%u,\"total\":%u,\"percent\":%d}",
+                         ev.xfer_id, ev.filename, ev.from,
+                         state_name, ev.done_chunks, ev.total_chunks, pct);
+                sse_broadcast(event_name, json);
+            }
         }
         usleep(50000); /* 50ms */
     }
