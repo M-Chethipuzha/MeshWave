@@ -1,10 +1,11 @@
 /* server.c
- * TCP server: accept loop, peer table, MSG_CHAT routing.
+ * TCP server: accept loop, peer table, route chat and file messages.
  * Uses select() to multiplex all peer connections.
  */
 
 #include "server.h"
 #include "discovery.h"
+#include "transfer.h"
 #include "util.h"
 
 #include <stdio.h>
@@ -147,6 +148,44 @@ static void handle_packet(int fd, PktHeader *hdr, const char *payload)
         break;
     }
 
+    case MSG_FILE_META:
+    case MSG_FILE_CHUNK:
+    case MSG_FILE_ACK:
+    case MSG_FILE_NACK:
+    case MSG_PAUSE:
+    case MSG_RESUME: {
+        /* File messages: payload starts with "recipient\0..." for META,
+         * or xfer_id(4B) for CHUNK/ACK/NACK/PAUSE/RESUME.
+         * Route the entire packet (header + payload) to the target peer. */
+        const char *to = NULL;
+        if (hdr->type == MSG_FILE_META) {
+            to = payload;
+        } else {
+            /* For chunk/ack/nack/pause/resume, we forward to all other peers
+             * since the xfer_id identifies the transfer on both sides */
+            char fwd_buf[CHUNK_SIZE + 256 + sizeof(PktHeader)];
+            memcpy(fwd_buf, hdr, sizeof(PktHeader));
+            memcpy(fwd_buf + sizeof(PktHeader), payload, hdr->payload_len);
+            broadcast_to_all(fwd_buf, sizeof(PktHeader) + hdr->payload_len, fd);
+            break;
+        }
+
+        /* Route META to target peer */
+        char fwd_buf[MAX_MSG + sizeof(PktHeader)];
+        memcpy(fwd_buf, hdr, sizeof(PktHeader));
+        memcpy(fwd_buf + sizeof(PktHeader), payload, hdr->payload_len);
+
+        pthread_mutex_lock(&peer_lock);
+        Peer *target = peer_find_by_name(to);
+        if (target) {
+            send_all(target->fd, fwd_buf, sizeof(PktHeader) + hdr->payload_len);
+        } else {
+            broadcast_to_all(fwd_buf, sizeof(PktHeader) + hdr->payload_len, fd);
+        }
+        pthread_mutex_unlock(&peer_lock);
+        break;
+    }
+
     case MSG_BYE:
         peer_remove(fd);
         break;
@@ -233,10 +272,13 @@ static void *server_loop(void *arg)
             ssize_t n = recv(fd, &hdr, sizeof(hdr), MSG_WAITALL);
             if (n <= 0) { peer_remove(fd); continue; }
 
-            char payload[MAX_MSG];
-            if (hdr.payload_len > 0 && hdr.payload_len <= MAX_MSG) {
+            char payload[CHUNK_SIZE + 256];
+            int max_payload = (int)sizeof(payload);
+            if (hdr.payload_len > 0 && hdr.payload_len <= max_payload) {
                 n = recv(fd, payload, hdr.payload_len, MSG_WAITALL);
                 if (n <= 0) { peer_remove(fd); continue; }
+            } else if (hdr.payload_len > 0) {
+                peer_remove(fd); continue;
             }
 
             handle_packet(fd, &hdr, payload);

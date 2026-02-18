@@ -268,6 +268,158 @@ body {
 .welcome-panel h2 { font-size: 24px; color: var(--text); margin-bottom: 8px; }
 .welcome-panel p { font-size: 14px; max-width: 400px; text-align: center; }
 
+/* ── File Transfer Panel ───────────────────────── */
+.file-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.file-header {
+  padding: 16px 20px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+}
+.file-header h3 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+.file-header p { font-size: 12px; color: var(--text-muted); }
+
+.drop-zone {
+  margin: 16px 20px;
+  padding: 40px;
+  border: 2px dashed var(--border);
+  border-radius: 12px;
+  text-align: center;
+  color: var(--text-muted);
+  transition: all 0.2s;
+  cursor: pointer;
+}
+.drop-zone:hover, .drop-zone.dragover {
+  border-color: var(--accent);
+  background: rgba(0,168,132,0.05);
+  color: var(--accent);
+}
+.drop-zone .icon { font-size: 36px; margin-bottom: 8px; }
+.drop-zone .label { font-size: 14px; }
+.drop-zone .sublabel { font-size: 12px; margin-top: 4px; }
+
+.send-file-form {
+  margin: 0 20px 16px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.send-file-form input {
+  flex: 1;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-input);
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+}
+.send-file-form select {
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-input);
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+}
+.send-file-form button {
+  padding: 10px 18px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.send-file-form button:hover { background: var(--accent-hover); }
+
+.transfer-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 20px 16px;
+}
+.transfer-list h4 {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+.xfer-card {
+  background: var(--bg-panel);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+}
+.xfer-card .xfer-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.xfer-card .xfer-name {
+  font-size: 14px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.xfer-card .xfer-peer {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.xfer-card .xfer-bar {
+  width: 100%;
+  height: 6px;
+  background: var(--bg-input);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+.xfer-card .xfer-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 0.3s;
+}
+.xfer-card .xfer-bar-fill.error { background: var(--danger); }
+.xfer-card .xfer-bar-fill.paused { background: #f59e0b; }
+.xfer-card .xfer-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.xfer-card .xfer-actions button {
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 11px;
+  cursor: pointer;
+  margin-left: 4px;
+}
+.xfer-card .xfer-actions button:hover { background: var(--bg-input); }
+.xfer-badge {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+.xfer-badge.active { background: var(--accent); color: #fff; }
+.xfer-badge.done { background: #22c55e; color: #fff; }
+.xfer-badge.error { background: var(--danger); color: #fff; }
+.xfer-badge.paused { background: #f59e0b; color: #000; }
+
 .hidden { display: none !important; }
 </style>
 </head>
@@ -327,6 +479,30 @@ body {
         <button onclick="sendMessage()">Send</button>
       </div>
     </div>
+
+    <!-- Files Panel -->
+    <div class="hidden" id="filePanel">
+      <div class="file-header">
+        <h3>📁 File Transfer</h3>
+        <p>Send files to peers on your LAN. Drag &amp; drop or enter a file path.</p>
+      </div>
+      <div class="drop-zone" id="dropZone" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
+        <div class="icon">📂</div>
+        <div class="label">Drag &amp; drop files here</div>
+        <div class="sublabel">or use the form below to enter a file path</div>
+      </div>
+      <div class="send-file-form">
+        <input type="text" id="filePathInput" placeholder="File path (e.g. /Users/you/file.zip)">
+        <select id="filePeerSelect"><option value="">Select peer...</option></select>
+        <button onclick="sendFile()">Send</button>
+      </div>
+      <div class="transfer-list">
+        <h4>Transfers</h4>
+        <div id="transferList">
+          <div class="empty-state">No transfers yet</div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -335,9 +511,11 @@ const state = {
   mode: null,         // 'server' | 'client'
   username: 'User',
   activePeer: null,
+  activeTab: 'messages',
   messages: {},       // { peerName: [{ from, text, ts, dir }] }
   servers: [],
   peers: [],
+  transfers: [],      // [{ id, filename, peer, state, done, total, percent }]
   sse: null
 };
 
@@ -379,6 +557,7 @@ function enterApp() {
   } else {
     setInterval(pollPeers, 3000);
   }
+  setInterval(pollTransfers, 5000);
 }
 
 /* ── Server / Peer Polling ─────────────────────── */
@@ -396,6 +575,7 @@ async function pollPeers() {
     const res = await fetch('/api/peers');
     state.peers = await res.json();
     renderPeerList();
+    if (state.activeTab === 'files') updateFilePeerSelect();
   } catch (e) {}
 }
 
@@ -527,6 +707,10 @@ function startSSE() {
     } catch (err) {}
   });
 
+  state.sse.addEventListener('file_progress', e => { handleFileEvent(e); });
+  state.sse.addEventListener('file_complete', e => { handleFileEvent(e); });
+  state.sse.addEventListener('file_error', e => { handleFileEvent(e); });
+
   state.sse.onerror = () => {
     document.getElementById('statusBadge').textContent = 'Reconnecting...';
     document.getElementById('statusBadge').classList.add('disconnected');
@@ -540,8 +724,155 @@ function startSSE() {
 /* ── Tabs ──────────────────────────────────────── */
 
 function switchTab(tab) {
+  state.activeTab = tab;
   document.getElementById('tabMessages').classList.toggle('active', tab === 'messages');
   document.getElementById('tabFiles').classList.toggle('active', tab === 'files');
+
+  if (tab === 'files') {
+    document.getElementById('welcomePanel').classList.add('hidden');
+    document.getElementById('chatPanel').classList.add('hidden');
+    document.getElementById('filePanel').classList.remove('hidden');
+    updateFilePeerSelect();
+    pollTransfers();
+  } else {
+    document.getElementById('filePanel').classList.add('hidden');
+    if (state.activePeer) {
+      document.getElementById('chatPanel').classList.remove('hidden');
+    } else {
+      document.getElementById('welcomePanel').classList.remove('hidden');
+    }
+  }
+}
+
+/* ── File Transfer ─────────────────────────────── */
+
+function handleFileEvent(e) {
+  try {
+    const data = JSON.parse(e.data);
+    const idx = state.transfers.findIndex(t => t.id === data.id);
+    if (idx >= 0) {
+      state.transfers[idx] = data;
+    } else {
+      state.transfers.push(data);
+    }
+    renderTransfers();
+  } catch (err) {}
+}
+
+async function sendFile() {
+  const path = document.getElementById('filePathInput').value.trim();
+  const to   = document.getElementById('filePeerSelect').value;
+  if (!path || !to) return;
+
+  try {
+    const res = await fetch('/api/file/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path, to })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      document.getElementById('filePathInput').value = '';
+      state.transfers.push({
+        id: data.id, filename: path.split('/').pop(),
+        peer: to, state: 'active', done: 0, total: 0, percent: 0
+      });
+      renderTransfers();
+    }
+  } catch (e) {
+    console.error('send file failed:', e);
+  }
+}
+
+async function pauseTransfer(id) {
+  try {
+    await fetch('/api/file/pause', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+  } catch (e) {}
+}
+
+async function resumeTransfer(id) {
+  try {
+    await fetch('/api/file/resume', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+  } catch (e) {}
+}
+
+async function pollTransfers() {
+  try {
+    const res = await fetch('/api/transfers');
+    state.transfers = await res.json();
+    renderTransfers();
+  } catch (e) {}
+}
+
+function renderTransfers() {
+  const el = document.getElementById('transferList');
+  if (state.transfers.length === 0) {
+    el.innerHTML = '<div class="empty-state">No transfers yet</div>';
+    return;
+  }
+
+  el.innerHTML = state.transfers.map(t => {
+    const badgeClass = t.state || 'active';
+    const barClass = t.state === 'error' ? ' error' : t.state === 'paused' ? ' paused' : '';
+    const pct = t.percent || 0;
+
+    let actions = '';
+    if (t.state === 'active') {
+      actions = `<button onclick="pauseTransfer(${t.id})">⏸ Pause</button>`;
+    } else if (t.state === 'paused') {
+      actions = `<button onclick="resumeTransfer(${t.id})">▶ Resume</button>`;
+    }
+
+    const icon = t.state === 'done' ? '✅' : t.state === 'error' ? '❌' : '📄';
+
+    return `<div class="xfer-card">
+      <div class="xfer-top">
+        <div class="xfer-name">${icon} ${esc(t.filename || 'Unknown')}</div>
+        <span class="xfer-badge ${badgeClass}">${t.state}</span>
+      </div>
+      <div class="xfer-bar"><div class="xfer-bar-fill${barClass}" style="width:${pct}%"></div></div>
+      <div class="xfer-bottom">
+        <span class="xfer-peer">↔ ${esc(t.peer || '')} · ${t.done || 0}/${t.total || 0} chunks · ${pct}%</span>
+        <span class="xfer-actions">${actions}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function updateFilePeerSelect() {
+  const sel = document.getElementById('filePeerSelect');
+  const current = sel.value;
+  sel.innerHTML = '<option value="">Select peer...</option>';
+  state.peers.forEach(p => {
+    sel.innerHTML += `<option value="${esc(p.name)}">${esc(p.name)}</option>`;
+  });
+  if (current) sel.value = current;
+}
+
+function handleDragOver(e) {
+  e.preventDefault();
+  e.currentTarget.classList.add('dragover');
+}
+
+function handleDragLeave(e) {
+  e.currentTarget.classList.remove('dragover');
+}
+
+function handleDrop(e) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('dragover');
+  if (e.dataTransfer.files.length > 0) {
+    const file = e.dataTransfer.files[0];
+    document.getElementById('filePathInput').value = file.name;
+  }
 }
 
 /* ── Helpers ───────────────────────────────────── */

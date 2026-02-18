@@ -7,6 +7,7 @@ extern "C" {
 #include "discovery.h"
 #include "server.h"
 #include "client.h"
+#include "transfer.h"
 #include "util.h"
 }
 #include "http.h"
@@ -17,6 +18,7 @@ extern "C" {
 #include <cstring>
 #include <csignal>
 #include <unistd.h>
+#include <sys/stat.h>
 
 static volatile int quit = 0;
 
@@ -81,6 +83,9 @@ int main(int argc, char *argv[])
     signal(SIGTERM, on_signal);
 
     util_log(LOG_INFO, "MeshWave starting...");
+
+    mkdir("downloads", 0755);
+    transfer_init(NULL);
 
     http_start(http_port);
 
