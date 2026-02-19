@@ -36,11 +36,6 @@ target_include_directories(meshwave PRIVATE
 
 target_compile_options(meshwave PRIVATE -Wall -Wextra -O2)
 
-# Link threading and socket libraries
-if(WIN32)
-  # MSYS2/MinGW: ws2_32 for Winsock, pthread is provided by MinGW
-  target_link_libraries(meshwave PRIVATE ws2_32 pthread)
-else()
-  find_package(Threads REQUIRED)
-  target_link_libraries(meshwave PRIVATE Threads::Threads)
-endif()
+# Link pthread
+find_package(Threads REQUIRED)
+target_link_libraries(meshwave PRIVATE Threads::Threads)

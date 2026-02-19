@@ -219,8 +219,33 @@ The embedded HTTP server exposes these endpoints:
 
 ---
 
+## Platform Support
+
+| Platform | Status | Toolchain |
+|----------|--------|-----------|
+| **Linux** | ✅ Supported | GCC 11+ |
+| **macOS** | ✅ Supported | Clang 14+ (Xcode) |
+| **Windows** | ❌ Not supported | — |
+
+### Why not Windows?
+
+MeshWave is built on POSIX APIs that are fundamental to Unix systems programming:
+
+- **POSIX sockets** — `sys/socket.h`, `arpa/inet.h`, `netinet/in.h`
+- **POSIX threading** — `pthread_create`, `pthread_mutex_t`, `PTHREAD_MUTEX_INITIALIZER`
+- **POSIX I/O** — `pwrite()`, `fcntl()`, `select()` with file descriptors
+- **Network interfaces** — `ifaddrs.h`, `getifaddrs()` for local IP detection
+- **Packed structs** — `__attribute__((packed))` (GCC/Clang extension)
+
+Windows does not provide these headers or APIs natively. A port would require replacing the entire networking and threading layer with Winsock2 (`ws2_32`), Win32 threads or C11 threads, and MSVC-compatible struct packing (`#pragma pack`). This is a deliberate design choice — the project serves as a systems programming exercise focused on Unix socket programming fundamentals.
+
+For Windows users, running MeshWave inside **WSL2** (Windows Subsystem for Linux) works seamlessly with no code changes.
+
+---
+
 ## Limitations & Future Work
 
+- **Unix/macOS only** — requires POSIX APIs; see [Platform Support](#platform-support) above
 - **Single subnet only** — discovery uses broadcast, which doesn't cross routers
 - **No encryption** — all traffic is plaintext (LAN-only use case)
 - **No persistent history** — messages and transfers exist only during the session
