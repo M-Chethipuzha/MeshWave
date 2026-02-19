@@ -34,18 +34,12 @@ target_include_directories(meshwave PRIVATE
   ${CMAKE_BINARY_DIR}
 )
 
-# Platform-specific compiler options and libraries
-if(MSVC)
-  target_compile_options(meshwave PRIVATE /W4)
-  # MSVC handles optimization via CMAKE_BUILD_TYPE / config selection
-elseif(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
-  target_compile_options(meshwave PRIVATE -Wall -Wextra -O2)
-endif()
+target_compile_options(meshwave PRIVATE -Wall -Wextra -O2)
 
-# Link pthread (Unix) or ws2_32 (Windows)
+# Link threading and socket libraries
 if(WIN32)
-  target_link_libraries(meshwave PRIVATE ws2_32)
-  target_compile_definitions(meshwave PRIVATE _CRT_SECURE_NO_WARNINGS)
+  # MSYS2/MinGW: ws2_32 for Winsock, pthread is provided by MinGW
+  target_link_libraries(meshwave PRIVATE ws2_32 pthread)
 else()
   find_package(Threads REQUIRED)
   target_link_libraries(meshwave PRIVATE Threads::Threads)

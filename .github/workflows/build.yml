@@ -20,10 +20,14 @@ jobs:
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
-        run: cmake --build build --config Release -j$(nproc)
+        run: cmake --build build -j$(nproc)
 
-      - name: Verify binary exists
-        run: test -f build/meshwave && echo "✅ Binary built successfully"
+      - name: Verify binary
+        run: |
+          test -f build/meshwave
+          echo "✅ meshwave built successfully"
+          file build/meshwave
+          ls -lh build/meshwave
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -41,10 +45,14 @@ jobs:
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
-        run: cmake --build build --config Release -j$(sysctl -n hw.ncpu)
+        run: cmake --build build -j$(sysctl -n hw.ncpu)
 
-      - name: Verify binary exists
-        run: test -f build/meshwave && echo "✅ Binary built successfully"
+      - name: Verify binary
+        run: |
+          test -f build/meshwave
+          echo "✅ meshwave built successfully"
+          file build/meshwave
+          ls -lh build/meshwave
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -53,34 +61,39 @@ jobs:
           path: build/meshwave
 
   build-windows:
-    name: Windows (MSVC)
+    name: Windows (MSYS2 / MinGW)
     runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
         with:
-          python-version: '3.12'
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            python3
 
       - name: Configure
-        run: cmake -B build -G "Visual Studio 17 2022" -A x64
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
-        run: cmake --build build --config Release
+        run: cmake --build build
 
-      - name: Verify binary exists
+      - name: Verify binary
         run: |
-          if (Test-Path "build\Release\meshwave.exe") {
-            Write-Host "✅ Binary built successfully"
-          } else {
-            Write-Host "❌ Binary not found"
-            exit 1
-          }
-        shell: pwsh
+          test -f build/meshwave.exe
+          echo "✅ meshwave.exe built successfully"
+          ls -lh build/meshwave.exe
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: meshwave-windows
-          path: build/Release/meshwave.exe
+          path: build/meshwave.exe
